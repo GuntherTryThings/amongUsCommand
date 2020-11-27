@@ -1,62 +1,88 @@
-let Parser = require('rss-parser');
-let parser = new Parser();
+const Parser = require('rss-parser');
+const parser = new Parser();
+
 const Discord = require('discord.js');
 const { createCanvas, loadImage } = require('canvas');
 
-let str;
-let elso = false;
-let impostor;
-let died;
-
-async function main(msg) {
-    let feed = await parser.parseURL('https://koronavirus.gov.hu/cikkek/rss.xml');
-   
-    feed.items.forEach(item => {
-        if(!elso && item.title.includes("fővel emelkedett a beazonosított fertőzöttek száma")) str = item.title.slice(0).trim().split(' '), elso = true;
-    });
-
-    impostor = parseInt(str[0]);
-    died = parseInt(str[9]);
-
-    const canvas = createCanvas(1250, 600)
-    const ctx = canvas.getContext('2d')
-
-    let x = 20, y = 75;
-    let block = 0;
-
-    ctx.font = "bold 50px Verdana";
-    ctx.fillStyle = 'white';
-    ctx.fillText(`There are               ${impostor < 1000 ? '' : '  '}            among us`, 100, 50);
-    ctx.fillStyle = 'red';
-    ctx.fillText(`${impostor} Impostors`, 390, 50);
-    ctx.fillStyle = 'white';
-    ctx.fillText(`${died < 10 ? '' : '  '} died`, 670, 520);
-    ctx.fillStyle = 'cyan';
-    ctx.fillText(`${died} Crewmate`, 330, 520);
-
-    for(let i = 0; i < impostor; i++) {
-        let myimg = await loadImage(`images/amongUsCharacters/${Math.floor(Math.random()*12)+1}.png`)
-        ctx.drawImage(myimg, x, y, 20, 30);
-        x += 10;
-        if(i%12 == 11) block++;
-        if(block == 10) y += 43, x = 20, block = 0;
-    }
-
-    y = 545;
-    x = 20;
-
-    for(let i = 0; i < died; i++) {
-        let myimg = await loadImage(`images/amongUsCharacters/${Math.floor(Math.random()*12)+1}.png`)
-        ctx.drawImage(myimg, x, y, 20, 30);
-        let myX = await loadImage(`images/amongUsCharacters/x.png`)
-        ctx.drawImage(myX, x+3, y-5, 30, 30);
-        x += 30;
-        if(i%12 == 11) block++;
-        if(block == 10) y += 43, x = 20, block = 0;
-    }
-
-    const attachment = new Discord.MessageAttachment(canvas.toBuffer(), 'nyeroszamCanvas.png');
-    msg.channel.send(attachment);
+module.exports = async (message) => {
+    const virusData = await getVirusData();
+    var canvas = createCanvas(1250, Math.floor(virusData.infected / 120) * 48 +  Math.floor(virusData.died / 100) * 48 + 200);
+    var canvasContext = canvas.getContext('2d');
+    await fillCanvas(canvasContext, virusData);
+    const attachment = new Discord.MessageAttachment(canvas.toBuffer(), 'nyeroszam.png');
+    message.channel.send(attachment);
 }
 
-module.exports = main
+async function getVirusData() {
+    const feed = await parser.parseURL('https://koronavirus.gov.hu/cikkek/rss.xml');
+    const latestDataTitle = feed.items.find(element => element.title.includes('fővel emelkedett a beazonosított fertőzöttek száma')).title;
+    const infected = parseInt(latestDataTitle.substring(0, 10));
+    const died = parseInt(latestDataTitle.substring(latestDataTitle.length - 10, latestDataTitle.length - 1));
+
+    return {
+        infected,
+        died
+    }
+}
+
+async function fillCanvas(canvasContext, virusData) {
+    let canvasData = {
+        xCoord: 20,
+        yCoord: 75
+    };
+
+    drawImpostorTitle(canvasContext, virusData);
+    await drawImpostors(canvasContext, virusData, canvasData);
+    canvasData = drawCrewmateTitle(canvasContext, virusData, canvasData);
+    await drawCrewmates(canvasContext, virusData, canvasData);
+}
+
+function drawImpostorTitle(canvasContext, virusData) {
+    canvasContext.font = 'bold 50px Verdana';
+    canvasContext.fillStyle = 'white';
+    canvasContext.fillText('There are' + 'among us'.padStart(32 + (`${virusData.infected}`.length - 3) * 6), 100, 50);
+    canvasContext.fillStyle = 'red';
+    canvasContext.fillText(`${virusData.infected} Impostors`, 390, 50);
+}
+
+async function drawImpostors(canvasContext, virusData, canvasData) {
+    for (let i = 0; i < virusData.infected; i++) {
+        const amongUsCharacterImage = await loadImage(`images/amongUsCharacters/${Math.floor(Math.random() * 12) + 1}.png`);
+        canvasContext.drawImage(amongUsCharacterImage, canvasData.xCoord, canvasData.yCoord, 20, 30);
+        canvasData.xCoord += 10;
+        if (i % 120 == 119)
+            canvasData = newRow(canvasData);
+    }
+}
+
+function newRow(canvasData) {
+    canvasData.yCoord += 43;
+    canvasData.xCoord = 20;
+    canvasData.rowNum = 0;
+
+    return canvasData;
+}
+
+function drawCrewmateTitle(canvasContext, virusData, canvasData) {
+    canvasData.yCoord += 100;
+    canvasData.xCoord = 20;
+    canvasContext.fillStyle = 'white';
+    canvasContext.fillText(`died`.padStart(6 + (`${virusData.died}`.length - 1) * 2), 670, canvasData.yCoord);
+    canvasContext.fillStyle = 'cyan';
+    canvasContext.fillText(`${virusData.died} Crewmate`, 330, canvasData.yCoord);
+    canvasData.yCoord += 50;
+
+    return canvasData;
+}
+
+async function drawCrewmates(canvasContext, virusData, canvasData) {
+    for (let i = 0; i < virusData.died; i++) {
+        const amongUsCharacterImage = await loadImage(`images/amongUsCharacters/${Math.floor(Math.random() * 12) + 1}.png`);
+        canvasContext.drawImage(amongUsCharacterImage, canvasData.xCoord, canvasData.yCoord, 20, 30);
+        const xImage = await loadImage(`images/amongUsCharacters/x.png`);
+        canvasContext.drawImage(xImage, canvasData.xCoord + 3, canvasData.yCoord, 25, 25);
+        canvasData.xCoord += 30;
+        if (i % 40 == 39)
+            canvasData = newRow(canvasData);
+    }
+}
